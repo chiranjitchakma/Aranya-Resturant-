@@ -1,4 +1,4 @@
-var WA = '91XXXXXXXXXX'; // REPLACE with your actual number e.g. '919876543210'
+var WA = '918798712804';
 
 // ── MENU DATA ──
 var MENU = {
