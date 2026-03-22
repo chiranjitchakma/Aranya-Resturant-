@@ -137,10 +137,13 @@ function validateForm(){
 // ── WHATSAPP ──
 function waOpen(){window.open('https://wa.me/'+WA+'?text='+encodeURIComponent("Hello Aranya Garden! I'd like to place an order."),'_blank','noopener,noreferrer');}
 function sendWA(){
-  var msg=document.getElementById('ct-msg').value.trim();
-  var name=document.getElementById('ct-name').value.trim();
-  if(!msg){toast('Please type a message','err');return;}
-  window.open('https://wa.me/'+WA+'?text='+encodeURIComponent('Hi Aranya Garden, '+msg+(name?' – '+name:'')),'_blank','noopener,noreferrer');
+  var msg = document.getElementById('ct-msg').value.trim();
+  var name = document.getElementById('ct-name').value.trim();
+  if(!msg){ toast('Please type a message', 'err'); return; }
+  var text = '🌿 *Aranya Garden Enquiry*\n\n';
+  if(name) text += '👤 Name: ' + name + '\n';
+  text += '📝 Message: ' + msg;
+  window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(text), '_blank', 'noopener,noreferrer');
 }
 
 // ── STATUS ──
