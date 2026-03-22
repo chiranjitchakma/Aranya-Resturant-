@@ -224,7 +224,6 @@ document.addEventListener('keydown',function(e){
 
 // ── INIT — everything wrapped in try-catch so one error never blanks the page ──
 
-
 /* ── MENU SEARCH ── */
 var _searchTimer = null;
 
@@ -635,3 +634,4 @@ function placeOrder() {
   window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener,noreferrer');
   cart = {}; saveCart(); updateBadge(); syncCards(); renderCart();
   toast('Order sent to WhatsApp! 🎉');
+}
