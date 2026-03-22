@@ -474,93 +474,54 @@ function _reverseGeocode(lat, lng, cb) {
   });
 }
 
-// When user manually edits address, re-check if they had a GPS fix
+// When user types address manually — geocode it and calculate distance
+var _addrTimer = null;
 function onAddrInput() {
-  // If user edits, clear the distance check (we don't know new location)
-  // Only clear if they meaningfully change it
+  var addr = document.getElementById('caddr').value.trim();
+
+  // Clear GPS coords since user is typing manually now
+  _locState.lat = null;
+  _locState.lng = null;
   _locState.checked = false;
   _locState.withinRange = false;
+
+  // Hide badge while typing
   var badge = document.getElementById('dist-badge');
-  if (badge) badge.classList.remove('show', 'ok', 'far');
+  if (badge) badge.className = '';
   var noDelMsg = document.getElementById('no-delivery-msg');
   if (noDelMsg) noDelMsg.classList.remove('show');
   var placeBtn = document.querySelector('.place-btn');
-  if (placeBtn) placeBtn.disabled = false; // Re-enable so they can still order
+  if (placeBtn) placeBtn.disabled = false;
+
+  // Need at least 5 chars before trying to geocode
+  if (addr.length < 5) return;
+
+  // Debounce — wait 900ms after user stops typing
+  clearTimeout(_addrTimer);
+  _addrTimer = setTimeout(function() {
+    _geocodeAddress(addr);
+  }, 900);
 }
 
-document.addEventListener('DOMContentLoaded',function(){
-  try{loadCart();}catch(e){console.warn('loadCart',e);cart={};}
-  try{renderMenus();}catch(e){console.error('renderMenus',e);}
-  try{updateStatus();setInterval(updateStatus,60000);}catch(e){}
-  try{initStickyNav();}catch(e){}
-  try{initMobNav();}catch(e){}
-  try{updateBadge();}catch(e){}
-  try{initFadeIn();setTimeout(initFadeIn,600);}catch(e){}
-
-  // WhatsApp buttons
-  try{
-    ['nav-wa','hero-wa','mob-wa','apps-wa'].forEach(function(id){
-      var el=document.getElementById(id);
-      if(el&&id!=='mob-wa')el.addEventListener('click',function(e){e.preventDefault();waOpen();});
-    });
-  }catch(e){}
-
-  // Swiggy placeholder
-  try{
-    var sw=document.getElementById('swiggy-btn');
-    if(sw)sw.addEventListener('click',function(){toast('Swiggy link coming soon!');} );
-  }catch(e){}
-
-  // Scroll to top button
-  try{
-    var topBtn=document.getElementById('go-top');
-    if(topBtn){
-      window.addEventListener('scroll',function(){
-        topBtn.classList.toggle('show',window.scrollY>320);
-      },{passive:true});
-      topBtn.addEventListener('click',function(){
-        window.scrollTo({top:0,behavior:'smooth'});
-      });
-    }
-  }catch(e){}
-});
-
-
-
-/* ── PLACE ORDER ── */
-function placeOrder() {
-  if (!validateForm()) return;
-
-  // Location range check (only when GPS was used)
-  if (_locState.checked && !_locState.withinRange) {
-    toast('🚫 Outside delivery range. We cannot deliver here.', 'err');
-    return;
+function _geocodeAddress(addr) {
+  // Show searching state
+  var badge = document.getElementById('dist-badge');
+  if (badge) {
+    badge.className = 'show';
+    badge.style.background = 'rgba(45,80,22,.06)';
+    badge.style.borderColor = 'rgba(45,80,22,.2)';
+    badge.style.color = 'var(--ctm)';
+    badge.innerHTML = '🔍 Checking delivery...';
   }
 
-  var name  = document.getElementById('cname').value.trim();
-  var phone = document.getElementById('cphone').value.trim();
-  var addr  = document.getElementById('caddr').value.trim();
+  // Append Mysuru to help Nominatim find the right location
+  var query = addr;
+  if (!/mysuru|mysore|karnataka/i.test(addr)) query = addr + ', Mysuru, Karnataka';
 
-  var items = Object.entries(cart).map(function(e) {
-    return '• ' + e[0] + ' × ' + e[1].q + ' — ₹' + (e[1].p * e[1].q);
-  }).join('\n');
+  var url = 'https://nominatim.openstreetmap.org/search?format=json&q=' +
+            encodeURIComponent(query) + '&limit=1&addressdetails=1&countrycodes=in';
 
-  var distLine = (_locState.checked && _locState.lat !== null)
-    ? '\nDistance: ' + _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng).toFixed(1) + ' km'
-    : '';
-
-  var msg = '🌿 *New Order — Aranya Garden*\n\n' +
-            '📋 *Items:*\n' + items + '\n\n' +
-            '💰 *Total: ₹' + cartTotal() + '*\n\n' +
-            '👤 *Customer:*\n' +
-            'Name: '    + name  + '\n' +
-            'Phone: '   + phone + '\n' +
-            'Address: ' + addr  + distLine + '\n\n' +
-            '💳 Payment: Cash on Delivery\n' +
-            '⏱ Kindly confirm. Thank you!';
-
-  closeCart();
-  window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener,noreferrer');
-  cart = {}; saveCart(); updateBadge(); syncCards(); renderCart();
-  toast('Order sent to WhatsApp! 🎉');
-}
+  fetch(url, { headers: { 'Accept-Language': 'en' } })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    
