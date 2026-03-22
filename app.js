@@ -224,6 +224,7 @@ document.addEventListener('keydown',function(e){
 
 // ── INIT — everything wrapped in try-catch so one error never blanks the page ──
 
+
 /* ── MENU SEARCH ── */
 var _searchTimer = null;
 
@@ -524,4 +525,113 @@ function _geocodeAddress(addr) {
   fetch(url, { headers: { 'Accept-Language': 'en' } })
   .then(function(r) { return r.json(); })
   .then(function(data) {
-    
+    if (!data || data.length === 0) {
+      // Could not geocode — show neutral message, allow ordering
+      if (badge) {
+        badge.className = 'show';
+        badge.style.background = 'rgba(212,131,26,.08)';
+        badge.style.borderColor = 'rgba(212,131,26,.3)';
+        badge.style.color = '#7a4a08';
+        badge.innerHTML = '📍 Could not verify location — ensure address is correct';
+      }
+      _locState.checked = false;
+      var placeBtn = document.querySelector('.place-btn');
+      if (placeBtn) placeBtn.disabled = false;
+      return;
+    }
+
+    var lat = parseFloat(data[0].lat);
+    var lng = parseFloat(data[0].lon);
+    _locState.lat = lat;
+    _locState.lng = lng;
+
+    // Reset badge inline styles before _setDistBadge reuses classList
+    if (badge) { badge.style.background = ''; badge.style.borderColor = ''; badge.style.color = ''; }
+
+    var dist = _haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng);
+    _setDistBadge(dist);
+  })
+  .catch(function() {
+    // Network error — allow ordering, don't block
+    if (badge) badge.className = '';
+    _locState.checked = false;
+    var placeBtn = document.querySelector('.place-btn');
+    if (placeBtn) placeBtn.disabled = false;
+  });
+}
+
+document.addEventListener('DOMContentLoaded',function(){
+  try{loadCart();}catch(e){console.warn('loadCart',e);cart={};}
+  try{renderMenus();}catch(e){console.error('renderMenus',e);}
+  try{updateStatus();setInterval(updateStatus,60000);}catch(e){}
+  try{initStickyNav();}catch(e){}
+  try{initMobNav();}catch(e){}
+  try{updateBadge();}catch(e){}
+  try{initFadeIn();setTimeout(initFadeIn,600);}catch(e){}
+
+  // WhatsApp buttons
+  try{
+    ['nav-wa','hero-wa','mob-wa','apps-wa'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el&&id!=='mob-wa')el.addEventListener('click',function(e){e.preventDefault();waOpen();});
+    });
+  }catch(e){}
+
+  // Swiggy placeholder
+  try{
+    var sw=document.getElementById('swiggy-btn');
+    if(sw)sw.addEventListener('click',function(){toast('Swiggy link coming soon!');} );
+  }catch(e){}
+
+  // Scroll to top button
+  try{
+    var topBtn=document.getElementById('go-top');
+    if(topBtn){
+      window.addEventListener('scroll',function(){
+        topBtn.classList.toggle('show',window.scrollY>320);
+      },{passive:true});
+      topBtn.addEventListener('click',function(){
+        window.scrollTo({top:0,behavior:'smooth'});
+      });
+    }
+  }catch(e){}
+});
+
+
+
+/* ── PLACE ORDER ── */
+function placeOrder() {
+  if (!validateForm()) return;
+
+  // Location range check (only when GPS was used)
+  if (_locState.checked && !_locState.withinRange) {
+    toast('🚫 Outside delivery range. We cannot deliver here.', 'err');
+    return;
+  }
+
+  var name  = document.getElementById('cname').value.trim();
+  var phone = document.getElementById('cphone').value.trim();
+  var addr  = document.getElementById('caddr').value.trim();
+
+  var items = Object.entries(cart).map(function(e) {
+    return '• ' + e[0] + ' × ' + e[1].q + ' — ₹' + (e[1].p * e[1].q);
+  }).join('\n');
+
+  var distLine = (_locState.checked && _locState.lat !== null)
+    ? '\nDistance: ' + _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng).toFixed(1) + ' km'
+    : '';
+
+  var msg = '🌿 *New Order — Aranya Garden*\n\n' +
+            '📋 *Items:*\n' + items + '\n\n' +
+            '💰 *Total: ₹' + cartTotal() + '*\n\n' +
+            '👤 *Customer:*\n' +
+            'Name: '    + name  + '\n' +
+            'Phone: '   + phone + '\n' +
+            'Address: ' + addr  + distLine + '\n\n' +
+            '💳 Payment: Cash on Delivery\n' +
+            '⏱ Kindly confirm. Thank you!';
+
+  closeCart();
+  window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener,noreferrer');
+  cart = {}; saveCart(); updateBadge(); syncCards(); renderCart();
+  toast('Order sent to WhatsApp! 🎉');
