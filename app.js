@@ -51,7 +51,9 @@ function openCart(){
   var overlay=document.getElementById('cart-overlay');
   if(panel){panel.classList.add('on');panel.setAttribute('aria-hidden','false');}
   if(overlay)overlay.classList.add('on');
-  document.body.style.overflow='hidden'; // prevent background scroll
+  document.body.style.overflow='hidden';
+  // Init map after panel is visible (needs DOM dimensions)
+  setTimeout(_initMap, 120);
 }
 function closeCart(){
   var panel=document.getElementById('cart-panel');
@@ -110,25 +112,46 @@ function switchTab(btn,cat){
 
 // ── ORDER ──
 function validateForm(){
-  var ok=true;
-  var name=document.getElementById('cname').value.trim();
-  var phone=document.getElementById('cphone').value.trim();
-  var addr=document.getElementById('caddr').value.trim();
-  function setErr(id,eid,show){
-    var el=document.getElementById(id),er=document.getElementById(eid);
-    if(el)el.classList.toggle('err',show);
-    if(er)er.classList.toggle('on',show);
-    if(show)ok=false;
+  var ok = true;
+  var name  = document.getElementById('cname').value.trim();
+  var phone = document.getElementById('cphone').value.trim();
+  var area  = (document.getElementById('addr-search') || {}).value || '';
+  area = area.trim();
+  var flat  = document.getElementById('caddr').value.trim();
+
+  function setErr(id, eid, show) {
+    var el = document.getElementById(id), er = document.getElementById(eid);
+    if (el) el.classList.toggle('err', show);
+    if (er) er.classList.toggle('on', show);
+    if (show) ok = false;
   }
-  setErr('cname','err-name',name.length<2);
-  setErr('cphone','err-phone',!/^[6-9]\d{9}$/.test(phone));
-  setErr('caddr','err-addr',addr.length<5);
-  // If GPS-verified and outside range, mark address field
-  if(_locState.checked && !_locState.withinRange){
-    setErr('caddr','err-addr',true);
-    var errEl=document.getElementById('err-addr');
-    if(errEl){errEl.textContent='Outside 5 km delivery range.';errEl.classList.add('on');}
-    ok=false;
+
+  setErr('cname',  'err-name',  name.length < 2);
+  setErr('cphone', 'err-phone', !/^[6-9]\d{9}$/.test(phone));
+
+  /* area search must be filled */
+  var searchInp = document.getElementById('addr-search');
+  if (searchInp) searchInp.classList.toggle('err', area.length < 3);
+  var searchErr = document.getElementById('err-addr');
+  if (area.length < 3) {
+    if (searchErr) { searchErr.textContent = 'Please search and select your area.'; searchErr.classList.add('on'); }
+    ok = false;
+  } else if (searchErr) { searchErr.classList.remove('on'); }
+
+  /* flat number must be filled */
+  setErr('caddr', 'err-addr2', flat.length < 2);
+
+  /* pin must be placed (not sitting on restaurant) */
+  if (_locState.lat === null) {
+    if (!ok) { /* already failing */ }
+    /* allow ordering without pin if address filled — just no distance check */
+  }
+
+  /* if pin placed and outside range — block */
+  if (_locState.checked && !_locState.withinRange) {
+    if (searchInp) searchInp.classList.add('err');
+    if (searchErr) { searchErr.textContent = 'Outside 5 km delivery range.'; searchErr.classList.add('on'); }
+    ok = false;
   }
   return ok;
 }
@@ -331,58 +354,172 @@ document.addEventListener('keydown', function(e) {
 
 
 /* ── DELIVERY LOCATION & DISTANCE ── */
-var RESTAURANT = { lat: 12.3053, lng: 76.6551 }; // Saraswathipuram, Mysuru
+var RESTAURANT         = { lat: 12.3053, lng: 76.6551 };
 var DELIVERY_RADIUS_KM = 5;
 var _locState = { lat: null, lng: null, checked: false, withinRange: false };
+var _map      = null;
+var _marker   = null;
+var _sugTimer = null;
 
-// Haversine distance in km
+/* ── Haversine distance (km) ── */
 function _haversine(lat1, lon1, lat2, lon2) {
-  var R = 6371;
-  var dLat = (lat2 - lat1) * Math.PI / 180;
-  var dLon = (lon2 - lon1) * Math.PI / 180;
-  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-          Math.sin(dLon/2) * Math.sin(dLon/2);
+  var R = 6371, toRad = Math.PI / 180;
+  var dLat = (lat2 - lat1) * toRad, dLon = (lon2 - lon1) * toRad;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+          Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)*Math.sin(dLon/2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+/* ── Distance badge ── */
 function _setDistBadge(distKm) {
-  var badge = document.getElementById('dist-badge');
+  var badge    = document.getElementById('dist-badge');
   var noDelMsg = document.getElementById('no-delivery-msg');
   var placeBtn = document.querySelector('.place-btn');
   if (!badge) return;
-
   if (distKm === null) {
-    badge.className = ''; // strip show/ok/far to hide
+    badge.className = '';
     if (noDelMsg) noDelMsg.classList.remove('show');
     return;
   }
-
   var within = distKm <= DELIVERY_RADIUS_KM;
   _locState.withinRange = within;
-  _locState.checked = true;
-
+  _locState.checked     = true;
+  badge.className = '';
   badge.classList.add('show');
-  badge.classList.toggle('ok', within);
+  badge.classList.toggle('ok',  within);
   badge.classList.toggle('far', !within);
   badge.innerHTML = within
-    ? '✅ ' + distKm.toFixed(1) + ' km away — Delivery available'
-    : '⚠️ ' + distKm.toFixed(1) + ' km away — Outside 5 km range';
-
+    ? '✅ ' + distKm.toFixed(1) + ' km — Delivery available'
+    : '⚠️ ' + distKm.toFixed(1) + ' km — Outside 5 km range';
   if (noDelMsg) noDelMsg.classList.toggle('show', !within);
   if (placeBtn) placeBtn.disabled = !within;
 }
 
+/* ── Move pin to lat/lng, calculate distance ── */
+function _placePin(lat, lng) {
+  _locState.lat = lat;
+  _locState.lng = lng;
+  if (_map && _marker) {
+    _marker.setLatLng([lat, lng]);
+    _map.setView([lat, lng], 16);
+  }
+  _setDistBadge(_haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng));
+}
+
+/* ── Init Leaflet map ── */
+function _initMap() {
+  if (_map) { setTimeout(function(){ _map.invalidateSize(); }, 60); return; }
+  var el = document.getElementById('map-picker');
+  if (!el || typeof L === 'undefined') return;
+
+  _map = L.map('map-picker', { zoomControl: true, attributionControl: false })
+           .setView([RESTAURANT.lat, RESTAURANT.lng], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              { maxZoom: 19 }).addTo(_map);
+
+  /* restaurant fixed marker */
+  L.marker([RESTAURANT.lat, RESTAURANT.lng], {
+    icon: L.divIcon({ html:'<div style="font-size:1.5rem">🏪</div>',
+                      className:'', iconAnchor:[12,24] }),
+    title: 'Aranya Garden'
+  }).addTo(_map).bindPopup('<b>Aranya Garden</b><br>Saraswathipuram, Mysuru');
+
+  /* draggable customer marker */
+  _marker = L.marker([RESTAURANT.lat, RESTAURANT.lng], {
+    icon: L.divIcon({ html:'<div style="font-size:1.8rem">📍</div>',
+                      className:'', iconAnchor:[10,32] }),
+    draggable: true,
+    title: 'Your location — drag to adjust'
+  }).addTo(_map);
+  _marker.bindPopup('Your delivery location').openPopup();
+
+  function onPinMoved() {
+    var ll = _marker.getLatLng();
+    _locState.lat = ll.lat; _locState.lng = ll.lng;
+    _setDistBadge(_haversine(ll.lat, ll.lng, RESTAURANT.lat, RESTAURANT.lng));
+  }
+  _marker.on('drag',    onPinMoved);
+  _marker.on('dragend', onPinMoved);
+  _map.on('click', function(e) {
+    _marker.setLatLng(e.latlng);
+    _locState.lat = e.latlng.lat; _locState.lng = e.latlng.lng;
+    _setDistBadge(_haversine(e.latlng.lat, e.latlng.lng, RESTAURANT.lat, RESTAURANT.lng));
+  });
+
+  setTimeout(function(){ _map.invalidateSize(); }, 60);
+}
+
+/* ── Address search (Swiggy-style live suggestions) ── */
+function onAddrSearch(val) {
+  var box = document.getElementById('addr-suggestions');
+  if (!box) return;
+  clearTimeout(_sugTimer);
+  var q = val.trim();
+  if (q.length < 3) { box.innerHTML = ''; box.classList.remove('show'); return; }
+
+  // Show loading
+  box.innerHTML = '<div class="addr-sug-loading">🔍 Searching…</div>';
+  box.classList.add('show');
+
+  _sugTimer = setTimeout(function() {
+    // Add Mysuru bias so local streets resolve correctly
+    var query = q;
+    if (!/mysuru|mysore|karnataka/i.test(q)) query = q + ' Mysuru Karnataka India';
+
+    var url = 'https://nominatim.openstreetmap.org/search?format=json' +
+              '&q=' + encodeURIComponent(query) +
+              '&limit=6&addressdetails=1&countrycodes=in';
+
+    fetch(url, { headers: { 'Accept-Language': 'en' } })
+    .then(function(r) { return r.json(); })
+    .then(function(results) {
+      if (!results || !results.length) {
+        box.innerHTML = '<div class="addr-sug-empty">No results — try a nearby landmark</div>';
+        return;
+      }
+      box.innerHTML = results.map(function(r, i) {
+        var parts  = r.display_name.split(',');
+        var main   = parts[0].trim();
+        var sub    = parts.slice(1, 4).join(',').trim();
+        return '<div class="addr-sug-item" tabindex="0" ' +
+               'onclick="_pickSuggestion(' + r.lat + ',' + r.lon + ','' +
+               esc(r.display_name) + '')" ' +
+               'onkeydown="if(event.key==='Enter')_pickSuggestion(' + r.lat + ',' +
+               r.lon + ','' + esc(r.display_name) + '')">' +
+               '<span class="addr-sug-icon">📍</span>' +
+               '<div><div class="addr-sug-main">' + esc(main) + '</div>' +
+               '<div class="addr-sug-sub">' + esc(sub) + '</div></div></div>';
+      }).join('');
+    })
+    .catch(function() {
+      box.innerHTML = '<div class="addr-sug-empty">Search unavailable — use map pin</div>';
+    });
+  }, 400);
+}
+
+function _pickSuggestion(lat, lng, displayName) {
+  lat = parseFloat(lat); lng = parseFloat(lng);
+
+  /* fill search box with short name */
+  var inp = document.getElementById('addr-search');
+  if (inp) inp.value = displayName.split(',').slice(0, 3).join(',').trim();
+
+  /* close dropdown */
+  var box = document.getElementById('addr-suggestions');
+  if (box) { box.innerHTML = ''; box.classList.remove('show'); }
+
+  /* move pin + calculate distance */
+  _placePin(lat, lng);
+}
+
+/* ── GPS Detect ── */
 function detectLocation() {
-  // Rate-limit: block re-click for 3 seconds
   if (detectLocation._busy) return;
   detectLocation._busy = true;
   setTimeout(function(){ detectLocation._busy = false; }, 3000);
 
-  if (!navigator.geolocation) {
-    toast('Geolocation not supported by your browser', 'err');
-    return;
-  }
+  if (!navigator.geolocation) { toast('GPS not supported', 'err'); return; }
 
   var btn = document.getElementById('loc-btn');
   var txt = document.getElementById('loc-btn-txt');
@@ -391,173 +528,64 @@ function detectLocation() {
 
   navigator.geolocation.getCurrentPosition(
     function(pos) {
-      var lat = pos.coords.latitude;
-      var lng = pos.coords.longitude;
-      _locState.lat = lat;
-      _locState.lng = lng;
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      _placePin(lat, lng);
 
-      // Calculate distance immediately
-      var dist = _haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng);
-      _setDistBadge(dist);
-
-      // Reverse geocode for human-readable address
+      /* reverse geocode → fill search box */
       _reverseGeocode(lat, lng, function(addr) {
-        var addrEl = document.getElementById('caddr');
-        if (addrEl) {
-          addrEl.value = addr;
-          addrEl.focus();
-          // Clear error if it was showing
-          addrEl.classList.remove('err');
-          var errEl = document.getElementById('err-addr');
-          if (errEl) errEl.classList.remove('on');
-        }
+        var inp = document.getElementById('addr-search');
+        if (inp && addr) inp.value = addr;
         if (btn) btn.disabled = false;
         if (txt) txt.textContent = 'Detect';
-        toast('📍 Location detected — edit if needed');
+        toast('📍 Location detected — drag pin to adjust');
       });
     },
     function(err) {
       if (btn) btn.disabled = false;
       if (txt) txt.textContent = 'Detect';
-      var msgs = {
-        1: 'Location access denied. Please allow location and retry.',
-        2: 'Could not get your location. Check GPS/network.',
-        3: 'Location request timed out. Try again.'
-      };
+      var msgs = { 1:'Location denied — allow in browser settings.',
+                   2:'Could not get GPS. Check your connection.',
+                   3:'GPS timed out. Try again.' };
       toast(msgs[err.code] || 'Location unavailable.', 'err');
     },
     { timeout: 12000, maximumAge: 30000, enableHighAccuracy: true }
   );
 }
 
+/* ── Reverse geocode for GPS → address text ── */
 function _reverseGeocode(lat, lng, cb) {
-  // Use Nominatim (OpenStreetMap) — free, no API key
-  var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' +
-            encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng) +
-            '&zoom=18&addressdetails=1';
-
-  fetch(url, {
-    headers: { 'Accept-Language': 'en' }
-  })
+  fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' +
+        encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng) +
+        '&zoom=17&addressdetails=1',
+        { headers: { 'Accept-Language': 'en' } })
   .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (!data || !data.address) { cb(lat.toFixed(5) + ', ' + lng.toFixed(5)); return; }
-    var a = data.address;
-    // Build a clean, readable address
-    // Build address — covers all Nominatim field names used in India
-    var parts = [];
-    // Landmark / building name
-    var landmark = a.amenity || a.shop || a.building || a.tourism || '';
-    if (landmark) parts.push(landmark);
-    // House / plot number
+  .then(function(d) {
+    if (!d || !d.address) { cb(''); return; }
+    var a = d.address, parts = [];
+    var lm = a.amenity || a.shop || a.building || '';
+    if (lm) parts.push(lm);
     if (a.house_number) parts.push(a.house_number);
-    // Street
-    var street = a.road || a.pedestrian || a.path || a.footway || '';
-    if (street) parts.push(street);
-    // Locality / area
-    var area = a.quarter || a.neighbourhood || a.suburb || a.residential || '';
-    if (area) parts.push(area);
-    // City
-    var city = a.city || a.town || a.municipality || a.county || a.state_district || a.village || '';
-    if (city) parts.push(city);
-    // State + PIN
-    if (a.state) parts.push(a.state);
-    if (a.postcode) parts.push(a.postcode);
-
-    var addr = parts.filter(Boolean).join(', ');
-    // display_name is always populated — use it as last resort
-    cb(addr || data.display_name.split(',').slice(0,5).join(',').trim() || (lat.toFixed(5) + ', ' + lng.toFixed(5)));
+    var st = a.road || a.pedestrian || a.path || '';
+    if (st) parts.push(st);
+    var ar = a.quarter || a.neighbourhood || a.suburb || '';
+    if (ar) parts.push(ar);
+    var ci = a.city || a.town || a.municipality || a.village || '';
+    if (ci) parts.push(ci);
+    cb(parts.filter(Boolean).join(', ') || d.display_name || '');
   })
-  .catch(function() {
-    // Fallback: just use coordinates as text
-    cb(lat.toFixed(5) + ', ' + lng.toFixed(5));
-  });
+  .catch(function() { cb(''); });
 }
 
-// When user types address manually — geocode it and calculate distance
-var _addrTimer = null;
-function onAddrInput() {
-  var addr = document.getElementById('caddr').value.trim();
-
-  // Clear GPS coords since user is typing manually now
-  _locState.lat = null;
-  _locState.lng = null;
-  _locState.checked = false;
-  _locState.withinRange = false;
-
-  // Hide badge while typing
-  var badge = document.getElementById('dist-badge');
-  if (badge) badge.className = '';
-  var noDelMsg = document.getElementById('no-delivery-msg');
-  if (noDelMsg) noDelMsg.classList.remove('show');
-  var placeBtn = document.querySelector('.place-btn');
-  if (placeBtn) placeBtn.disabled = false;
-
-  // Need at least 5 chars before trying to geocode
-  if (addr.length < 5) return;
-
-  // Debounce — wait 900ms after user stops typing
-  clearTimeout(_addrTimer);
-  _addrTimer = setTimeout(function() {
-    _geocodeAddress(addr);
-  }, 900);
-}
-
-function _geocodeAddress(addr) {
-  // Show searching state
-  var badge = document.getElementById('dist-badge');
-  if (badge) {
-    badge.className = 'show';
-    badge.style.background = 'rgba(45,80,22,.06)';
-    badge.style.borderColor = 'rgba(45,80,22,.2)';
-    badge.style.color = 'var(--ctm)';
-    badge.innerHTML = '🔍 Checking delivery...';
+/* ── Close suggestions when clicking outside ── */
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.addr-search-wrap')) {
+    var box = document.getElementById('addr-suggestions');
+    if (box) { box.innerHTML = ''; box.classList.remove('show'); }
   }
+});
 
-  // Append Mysuru to help Nominatim find the right location
-  var query = addr;
-  if (!/mysuru|mysore|karnataka/i.test(addr)) query = addr + ', Mysuru, Karnataka';
-
-  var url = 'https://nominatim.openstreetmap.org/search?format=json&q=' +
-            encodeURIComponent(query) + '&limit=1&addressdetails=1&countrycodes=in';
-
-  fetch(url, { headers: { 'Accept-Language': 'en' } })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (!data || data.length === 0) {
-      // Could not geocode — show neutral message, allow ordering
-      if (badge) {
-        badge.className = 'show';
-        badge.style.background = 'rgba(212,131,26,.08)';
-        badge.style.borderColor = 'rgba(212,131,26,.3)';
-        badge.style.color = '#7a4a08';
-        badge.innerHTML = '📍 Could not verify location — ensure address is correct';
-      }
-      _locState.checked = false;
-      var placeBtn = document.querySelector('.place-btn');
-      if (placeBtn) placeBtn.disabled = false;
-      return;
-    }
-
-    var lat = parseFloat(data[0].lat);
-    var lng = parseFloat(data[0].lon);
-    _locState.lat = lat;
-    _locState.lng = lng;
-
-    // Reset badge inline styles before _setDistBadge reuses classList
-    if (badge) { badge.style.background = ''; badge.style.borderColor = ''; badge.style.color = ''; }
-
-    var dist = _haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng);
-    _setDistBadge(dist);
-  })
-  .catch(function() {
-    // Network error — allow ordering, don't block
-    if (badge) badge.className = '';
-    _locState.checked = false;
-    var placeBtn = document.querySelector('.place-btn');
-    if (placeBtn) placeBtn.disabled = false;
-  });
-}
+/* ── onAddrInput: kept for compatibility (no-op now) ── */
+function onAddrInput() {}
 
 document.addEventListener('DOMContentLoaded',function(){
   try{loadCart();}catch(e){console.warn('loadCart',e);cart={};}
@@ -616,17 +644,24 @@ function placeOrder() {
     return '• ' + e[0] + ' × ' + e[1].q + ' — ₹' + (e[1].p * e[1].q);
   }).join('\n');
 
-  var distLine = (_locState.checked && _locState.lat !== null)
-    ? '\nDistance: ' + _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng).toFixed(1) + ' km'
-    : '';
+  var area  = document.getElementById('addr-search') ? document.getElementById('addr-search').value.trim() : '';
+  var fullAddr = (area ? area + ', ' : '') + addr;
+
+  var locLine = '';
+  if (_locState.lat !== null) {
+    var dist = _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng);
+    var mapsUrl = 'https://www.google.com/maps?q=' + _locState.lat.toFixed(6) + ',' + _locState.lng.toFixed(6);
+    locLine = '\n📏 Distance: ' + dist.toFixed(1) + ' km' +
+              '\n🗺️ Location: ' + mapsUrl;
+  }
 
   var msg = '🌿 *New Order — Aranya Garden*\n\n' +
             '📋 *Items:*\n' + items + '\n\n' +
             '💰 *Total: ₹' + cartTotal() + '*\n\n' +
             '👤 *Customer:*\n' +
-            'Name: '    + name  + '\n' +
-            'Phone: '   + phone + '\n' +
-            'Address: ' + addr  + distLine + '\n\n' +
+            'Name: '    + name     + '\n' +
+            'Phone: '   + phone    + '\n' +
+            'Address: ' + fullAddr + locLine + '\n\n' +
             '💳 Payment: Cash on Delivery\n' +
             '⏱ Kindly confirm. Thank you!';
 
