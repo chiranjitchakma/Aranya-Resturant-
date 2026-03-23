@@ -456,17 +456,16 @@ function onAddrSearch(val) {
   if (!box) return;
   clearTimeout(_sugTimer);
   var q = val.trim();
-  if (q.length < 3) { box.innerHTML = ''; box.classList.remove('show'); return; }
-
-  // Show loading
+  if (q.length < 3) {
+    box.innerHTML = '';
+    box.classList.remove('show');
+    return;
+  }
   box.innerHTML = '<div class="addr-sug-loading">🔍 Searching…</div>';
   box.classList.add('show');
 
   _sugTimer = setTimeout(function() {
-    // Add Mysuru bias so local streets resolve correctly
-    var query = q;
-    if (!/mysuru|mysore|karnataka/i.test(q)) query = q + ' Mysuru Karnataka India';
-
+    var query = (/mysuru|mysore|karnataka/i.test(q)) ? q : q + ' Mysuru Karnataka India';
     var url = 'https://nominatim.openstreetmap.org/search?format=json' +
               '&q=' + encodeURIComponent(query) +
               '&limit=6&addressdetails=1&countrycodes=in';
@@ -478,42 +477,50 @@ function onAddrSearch(val) {
         box.innerHTML = '<div class="addr-sug-empty">No results — try a nearby landmark</div>';
         return;
       }
-      box.innerHTML = results.map(function(r, i) {
-        var parts  = r.display_name.split(',');
-        var main   = parts[0].trim();
-        var sub    = parts.slice(1, 4).join(',').trim();
-        return '<div class="addr-sug-item" tabindex="0" ' +
-               'onclick="_pickSuggestion(' + r.lat + ',' + r.lon + ','' +
-               esc(r.display_name) + '')" ' +
-               'onkeydown="if(event.key==='Enter')_pickSuggestion(' + r.lat + ',' +
-               r.lon + ','' + esc(r.display_name) + '')">' +
-               '<span class="addr-sug-icon">📍</span>' +
-               '<div><div class="addr-sug-main">' + esc(main) + '</div>' +
-               '<div class="addr-sug-sub">' + esc(sub) + '</div></div></div>';
-      }).join('');
+      box.innerHTML = '';
+      results.forEach(function(r) {
+        var parts = r.display_name.split(',');
+        var main  = esc(parts[0].trim());
+        var sub   = esc(parts.slice(1, 4).join(',').trim());
+        var item  = document.createElement('div');
+        item.className   = 'addr-sug-item';
+        item.tabIndex    = 0;
+        item.innerHTML   = '<span class="addr-sug-icon">📍</span>' +
+                           '<div><div class="addr-sug-main">' + main + '</div>' +
+                           '<div class="addr-sug-sub">' + sub + '</div></div>';
+        item.dataset.lat  = r.lat;
+        item.dataset.lon  = r.lon;
+        item.dataset.name = r.display_name;
+        item.addEventListener('click', function() {
+          _pickSuggestion(parseFloat(this.dataset.lat),
+                          parseFloat(this.dataset.lon),
+                          this.dataset.name);
+        });
+        item.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            _pickSuggestion(parseFloat(this.dataset.lat),
+                            parseFloat(this.dataset.lon),
+                            this.dataset.name);
+          }
+        });
+        box.appendChild(item);
+      });
     })
     .catch(function() {
-      box.innerHTML = '<div class="addr-sug-empty">Search unavailable — use map pin</div>';
+      box.innerHTML = '<div class="addr-sug-empty">Search unavailable — use map pin below</div>';
     });
   }, 400);
 }
 
 function _pickSuggestion(lat, lng, displayName) {
-  lat = parseFloat(lat); lng = parseFloat(lng);
-
-  /* fill search box with short name */
   var inp = document.getElementById('addr-search');
   if (inp) inp.value = displayName.split(',').slice(0, 3).join(',').trim();
-
-  /* close dropdown */
   var box = document.getElementById('addr-suggestions');
   if (box) { box.innerHTML = ''; box.classList.remove('show'); }
-
-  /* move pin + calculate distance */
   _placePin(lat, lng);
 }
 
-/* ── GPS Detect ── */
+
 function detectLocation() {
   if (detectLocation._busy) return;
   detectLocation._busy = true;
