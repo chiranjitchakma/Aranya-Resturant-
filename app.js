@@ -680,7 +680,8 @@ function placeOrder() {
   }).join('\n');
 
   var area  = document.getElementById('addr-search') ? document.getElementById('addr-search').value.trim() : '';
-  var fullAddr = (area ? area + ', ' : '') + addr;
+  var build = document.getElementById('cbuild') ? document.getElementById('cbuild').value.trim() : '';
+  var fullAddr = [area, build, addr].filter(Boolean).join(', ');
 
   var locLine = '';
   if (_locState.lat !== null) {
