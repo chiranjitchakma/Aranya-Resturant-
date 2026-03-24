@@ -191,12 +191,20 @@
       <div class="map-box-hint">📌 Tap map or drag pin to set exact location</div>
       <div id="map-picker"></div>
     </div>
-    <!-- Flat/door number (separate, mandatory) -->
+    <!-- Building / Apartment / Hospital name (optional) -->
     <div class="fg" style="margin-top:.65rem">
-      <label for="caddr">Flat / House no. &amp; Floor *</label>
-      <input type="text" id="caddr" placeholder="e.g. Flat 12, 2nd Floor, Sunrise Apts"
+      <label for="cbuild">Building / Apartment / Hospital Name</label>
+      <input type="text" id="cbuild"
+        placeholder="e.g. Sunrise Apartments, City Hospital, Green Villa"
+        autocomplete="address-line2">
+    </div>
+    <!-- Flat/door number (mandatory) -->
+    <div class="fg">
+      <label for="caddr">Flat / House No. &amp; Floor *</label>
+      <input type="text" id="caddr"
+        placeholder="e.g. Flat 12, 2nd Floor"
         autocomplete="street-address">
-      <div class="ferr" id="err-addr2">Please add flat/house number</div>
+      <div class="ferr" id="err-addr2">Please add flat / house number</div>
     </div>
     <!-- Distance result -->
     <div id="dist-badge" class="pending" role="status" aria-live="polite">
