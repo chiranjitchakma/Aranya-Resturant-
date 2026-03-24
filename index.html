@@ -83,7 +83,7 @@
     <div class="trust-row">
       <span class="trust-badge">⭐ 4.4 Rated</span>
       <span class="trust-badge">🌿 Pure Veg</span>
-      <span class="trust-badge">⏱ ~30 Min Delivery</span>
+      <span class="trust-badge">⏱ ~2 Min Delivery</span>
       <span class="trust-badge">💰 ₹200–₹400</span>
     </div>
   </div>
@@ -213,10 +213,11 @@
     <div class="no-delivery-msg" id="no-delivery-msg">
       🚫 Outside delivery range (5 km). Please visit us or choose a closer address.
     </div>
-    <div class="cart-sticky-btn">
-      <div class="payinfo" style="margin-bottom:.6rem">💳 Payment: Cash on Delivery</div>
-      <button class="place-btn" onclick="placeOrder()">📲 Place Order on WhatsApp</button>
-    </div>
+  </div>
+  <!-- PLACE ORDER — always pinned at the bottom of the cart panel -->
+  <div class="cart-order-bar" id="cart-order-bar" style="display:none">
+    <div class="payinfo">💳 Payment: Cash on Delivery</div>
+    <button class="place-btn" onclick="placeOrder()">📲 Place Order on WhatsApp</button>
   </div>
 </div>
 
