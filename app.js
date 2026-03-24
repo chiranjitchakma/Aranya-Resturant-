@@ -25,13 +25,17 @@ function changeQty(name,d){
 }
 function renderCart(){
   var body=document.getElementById('cbody'),ftr=document.getElementById('cftr');
+  var orderBar=document.getElementById('cart-order-bar');
   if(!body)return;
   var entries=Object.entries(cart);
   if(!entries.length){
     body.innerHTML='<div class="cempty"><div class="em-ico">🌿</div><p>Your cart is empty</p><p style="font-size:var(--sm);margin-top:.3rem">Add items from the menu</p></div>';
-    if(ftr)ftr.style.display='none';return;
+    if(ftr)ftr.style.display='none';
+    if(orderBar)orderBar.style.display='none';
+    return;
   }
   if(ftr){ftr.style.display='block';}
+  if(orderBar){orderBar.style.display='block';}
   var tot=document.getElementById('ctotal');if(tot)tot.textContent='₹'+cartTotal();
   body.innerHTML=entries.map(function(e){
     var name=e[0],v=e[1];
@@ -438,15 +442,23 @@ function _initMap() {
     _locState.lng = ll.lng;
     _setDistBadge(_haversine(ll.lat, ll.lng, RESTAURANT.lat, RESTAURANT.lng));
   }
-  _marker.on('drag',    onPinMoved);
-  _marker.on('dragend', onPinMoved);
+  /* distance updates live while dragging */
+  _marker.on('drag', onPinMoved);
 
-  /* tap anywhere on map moves pin there */
+  /* on drag END — also reverse geocode and fill address fields */
+  _marker.on('dragend', function() {
+    var ll = _marker.getLatLng();
+    onPinMoved();
+    _fillAddressFromPin(ll.lat, ll.lng);
+  });
+
+  /* tap anywhere on map moves pin + fills address */
   _map.on('click', function(e) {
     _marker.setLatLng(e.latlng);
     _locState.lat = e.latlng.lat;
     _locState.lng = e.latlng.lng;
     _setDistBadge(_haversine(e.latlng.lat, e.latlng.lng, RESTAURANT.lat, RESTAURANT.lng));
+    _fillAddressFromPin(e.latlng.lat, e.latlng.lng);
   });
 
   /* Tile size fix */
@@ -559,12 +571,12 @@ function detectLocation() {
       /* show distance immediately */
       _setDistBadge(_haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng));
 
-      /* reverse geocode to fill search box */
-      _reverseGeocode(lat, lng, function(addr) {
+      /* reverse geocode to fill search box + building field */
+      _reverseGeocode(lat, lng, function(streetAddr, buildName) {
         var inp = document.getElementById('addr-search');
-        if (inp) {
-          inp.value = addr || (lat.toFixed(5) + ', ' + lng.toFixed(5));
-        }
+        if (inp) inp.value = streetAddr || (lat.toFixed(5) + ', ' + lng.toFixed(5));
+        var buildInp = document.getElementById('cbuild');
+        if (buildInp && buildName && !buildInp.value) buildInp.value = buildName;
         if (btn)  btn.disabled = false;
         if (icon) icon.style.display = '';
         if (txt)  txt.textContent = '';
@@ -587,28 +599,68 @@ function detectLocation() {
   );
 }
 
-/* ── Reverse geocode for GPS → address text ── */
+/* ── Reverse geocode (GPS → address text) ── */
 function _reverseGeocode(lat, lng, cb) {
   fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' +
         encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng) +
-        '&zoom=17&addressdetails=1',
+        '&zoom=18&addressdetails=1',
         { headers: { 'Accept-Language': 'en' } })
   .then(function(r) { return r.json(); })
   .then(function(d) {
-    if (!d || !d.address) { cb(''); return; }
-    var a = d.address, parts = [];
-    var lm = a.amenity || a.shop || a.building || '';
-    if (lm) parts.push(lm);
+    if (!d || !d.address) { cb('', ''); return; }
+    var a = d.address;
+
+    /* ── Building/place name — all types ── */
+    var buildName =
+      a.amenity       ||  /* hospital, school, bank, restaurant, cafe… */
+      a.tourism       ||  /* hotel, monument, attraction */
+      a.leisure       ||  /* park, playground */
+      a.shop          ||  /* supermarket, pharmacy, petrol/fuel */
+      a.fuel          ||  /* petrol pump */
+      a.office        ||  /* office building */
+      a.building      ||  /* generic building name */
+      a.healthcare    ||  /* clinic, health centre */
+      a.military      ||  /* army campus */
+      a.historic      ||  /* heritage site */
+      a.man_made      ||  /* tower, water tank */
+      '';
+
+    /* ── Street address ── */
+    var parts = [];
     if (a.house_number) parts.push(a.house_number);
-    var st = a.road || a.pedestrian || a.path || '';
+    var st = a.road || a.pedestrian || a.path || a.footway || a.service || '';
     if (st) parts.push(st);
-    var ar = a.quarter || a.neighbourhood || a.suburb || '';
+    var ar = a.quarter || a.neighbourhood || a.suburb || a.residential || '';
     if (ar) parts.push(ar);
-    var ci = a.city || a.town || a.municipality || a.village || '';
+    var ci = a.city || a.town || a.municipality || a.county || a.village || '';
     if (ci) parts.push(ci);
-    cb(parts.filter(Boolean).join(', ') || d.display_name || '');
+    if (a.state)    parts.push(a.state);
+    if (a.postcode) parts.push(a.postcode);
+
+    var streetAddr = parts.filter(Boolean).join(', ') || d.display_name || '';
+    cb(streetAddr, buildName);
   })
-  .catch(function() { cb(''); });
+  .catch(function() { cb('', ''); });
+}
+
+/* ── Fill address fields after pin is placed/moved ── */
+function _fillAddressFromPin(lat, lng) {
+  _reverseGeocode(lat, lng, function(streetAddr, buildName) {
+    /* Fill search box with street address (editable) */
+    var searchInp = document.getElementById('addr-search');
+    if (searchInp && streetAddr) {
+      searchInp.value = streetAddr;
+      /* clear any error */
+      searchInp.classList.remove('err');
+      var searchErr = document.getElementById('err-addr');
+      if (searchErr) searchErr.classList.remove('on');
+    }
+    /* Fill building name if detected (editable) */
+    var buildInp = document.getElementById('cbuild');
+    if (buildInp && buildName && !buildInp.value) {
+      buildInp.value = buildName;
+    }
+  });
 }
 
 /* ── Close suggestions when clicking/scrolling outside ── */
