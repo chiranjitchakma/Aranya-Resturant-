@@ -166,7 +166,7 @@ section,#hero,#menu,#order-apps,#why-us,#reviews,#location,#contact{scroll-margi
 .cqn{font-weight:700;min-width:1.2ch;text-align:center;font-size:var(--sm)}
 .cdel{color:var(--ca);font-size:.95rem;cursor:pointer;border:none;background:none;padding:0 .2rem}
 .cprice{font-weight:700;color:var(--cp);font-size:var(--sm);white-space:nowrap}
-.cftr{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:.9rem 1.4rem 5rem;border-top:1px solid var(--cb);background:var(--csf);min-height:0}
+.cftr{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:.9rem 1.4rem 7rem;border-top:1px solid var(--cb);background:var(--csf);min-height:0}
 .ctotal{display:flex;justify-content:space-between;align-items:center;padding:.6rem 0 .9rem;font-weight:700;font-size:var(--lg)}
 .ctotal-amt{color:var(--cp);font-family:var(--fd);font-size:var(--xl2)}
 .fg{margin-bottom:.75rem}
