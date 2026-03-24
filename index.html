@@ -83,7 +83,7 @@
     <div class="trust-row">
       <span class="trust-badge">⭐ 4.4 Rated</span>
       <span class="trust-badge">🌿 Pure Veg</span>
-      <span class="trust-badge">⏱ ~2 Min Delivery</span>
+      <span class="trust-badge">⏱ ~30 Min Delivery</span>
       <span class="trust-badge">💰 ₹200–₹400</span>
     </div>
   </div>
@@ -179,8 +179,9 @@
           <div id="addr-suggestions" class="addr-suggestions"></div>
         </div>
         <button type="button" class="loc-detect-btn" id="loc-btn"
-          onclick="detectLocation()" title="Use my GPS location">
-          📍 <span id="loc-btn-txt">Detect</span>
+          onclick="detectLocation()" title="Use my exact GPS location" aria-label="Detect my location">
+          <svg id="loc-btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>
+          <span id="loc-btn-txt"></span>
         </button>
       </div>
       <div class="ferr" id="err-addr">Please enter your delivery address</div>
@@ -198,12 +199,16 @@
       <div class="ferr" id="err-addr2">Please add flat/house number</div>
     </div>
     <!-- Distance result -->
-    <div id="dist-badge" role="status" aria-live="polite"></div>
+    <div id="dist-badge" class="pending" role="status" aria-live="polite">
+      📍 Move the pin to your location to check delivery
+    </div>
     <div class="no-delivery-msg" id="no-delivery-msg">
       🚫 Outside delivery range (5 km). Please visit us or choose a closer address.
     </div>
-    <div class="payinfo">💳 Payment: Cash on Delivery</div>
-    <button class="place-btn" onclick="placeOrder()">📲 Place Order on WhatsApp</button>
+    <div class="cart-sticky-btn">
+      <div class="payinfo" style="margin-bottom:.6rem">💳 Payment: Cash on Delivery</div>
+      <button class="place-btn" onclick="placeOrder()">📲 Place Order on WhatsApp</button>
+    </div>
   </div>
 </div>
 
