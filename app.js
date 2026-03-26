@@ -354,7 +354,7 @@ document.addEventListener('keydown', function(e) {
 /* ── DELIVERY LOCATION & DISTANCE ── */
 var RESTAURANT         = { lat: 12.3053, lng: 76.6551 };
 var DELIVERY_RADIUS_KM = 5;
-var _locState = { lat: null, lng: null, checked: false, withinRange: false, pinPlaced: false };
+var _locState = { lat: null, lng: null, checked: false, withinRange: false, pinPlaced: false, pinAddr: '' };
 var _map      = null;
 var _marker   = null;
 var _sugTimer = null;
@@ -394,14 +394,17 @@ function _setDistBadge(distKm) {
 
 /* ── Move pin to lat/lng, calculate distance ── */
 function _placePin(lat, lng) {
-  _locState.lat = lat;
-  _locState.lng = lng;
+  _locState.lat       = lat;
+  _locState.lng       = lng;
+  _locState.pinPlaced = true;
   if (_map && _marker) {
     _marker.setLatLng([lat, lng]);
     _map.setView([lat, lng], 18);
     _marker.openPopup();
   }
   _setDistBadge(_haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng));
+  /* always fill address fields from these exact coordinates */
+  _fillAddressFromPin(lat, lng);
 }
 
 /* ── Init Leaflet map ── */
@@ -493,7 +496,7 @@ function onAddrSearch(val) {
     .then(function(r) { return r.json(); })
     .then(function(results) {
       if (!results || !results.length) {
-        box.innerHTML = '<div class="addr-sug-empty">No results — try a nearby landmark</div>';
+        box.innerHTML = '<div class="addr-sug-empty">📍 Could not find that address — please drag the map pin to your location below</div>';
         return;
       }
       box.innerHTML = '';
@@ -649,16 +652,18 @@ function _reverseGeocode(lat, lng, cb) {
 /* ── Fill address fields after pin is placed/moved ── */
 function _fillAddressFromPin(lat, lng) {
   _reverseGeocode(lat, lng, function(streetAddr, buildName) {
-    /* Fill search box with street address (editable) */
+    /* Store canonical address derived from pin coords */
+    _locState.pinAddr = streetAddr;
+
+    /* Fill search box with street/area (editable) */
     var searchInp = document.getElementById('addr-search');
-    if (searchInp && streetAddr) {
+    if (searchInp) {
       searchInp.value = streetAddr;
-      /* clear any error */
       searchInp.classList.remove('err');
       var searchErr = document.getElementById('err-addr');
       if (searchErr) searchErr.classList.remove('on');
     }
-    /* Fill building name if detected (editable) */
+    /* Fill building name only if field is empty */
     var buildInp = document.getElementById('cbuild');
     if (buildInp && buildName && !buildInp.value) {
       buildInp.value = buildName;
@@ -734,23 +739,31 @@ function placeOrder() {
     return '• ' + e[0] + ' × ' + e[1].q + ' — ₹' + (e[1].p * e[1].q);
   }).join('\n');
 
-  var area  = document.getElementById('addr-search') ? document.getElementById('addr-search').value.trim() : '';
   var build = document.getElementById('cbuild') ? document.getElementById('cbuild').value.trim() : '';
-  var fullAddr = [area, build, addr].filter(Boolean).join(', ');
+  var flat  = addr; /* caddr = flat/house number */
 
-  // Build ONE clean address line for the restaurant
+  /* Build ONE unified address:
+     If pin was placed → use the reverse-geocoded address from the pin (pinAddr)
+     so text and map link both point to the exact same location.
+     If no pin → use whatever the customer typed. */
+  var areaText = _locState.pinPlaced && _locState.pinAddr
+                   ? _locState.pinAddr
+                   : (document.getElementById('addr-search') ? document.getElementById('addr-search').value.trim() : '');
+
+  var fullAddr    = [areaText, build, flat].filter(Boolean).join(', ');
+
   var addressLine = '';
   if (_locState.pinPlaced && _locState.lat !== null) {
-    // Pin was placed — use typed address as readable text,
-    // and the pin coordinates as the navigation link (same location)
-    var dist    = _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng);
-    var navUrl  = 'https://www.google.com/maps/dir/?api=1' +
-                  '&destination=' + _locState.lat.toFixed(6) + ',' + _locState.lng.toFixed(6);
+    var dist   = _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng);
+    var navUrl = 'https://www.google.com/maps/dir/?api=1' +
+                 '&destination=' + _locState.lat.toFixed(6) + ',' + _locState.lng.toFixed(6);
+    /* fullAddr was built from pinAddr (reverse-geocode of these exact coords)
+       so text, pin, and link all represent the same single location */
     addressLine = fullAddr +
                   '\n📏 Distance: ' + dist.toFixed(1) + ' km' +
                   '\n🗺️ Open in Maps: ' + navUrl;
   } else {
-    // No pin — just the typed address
+    /* No pin placed — customer typed manually, send text only */
     addressLine = fullAddr;
   }
 
