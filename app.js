@@ -354,7 +354,7 @@ document.addEventListener('keydown', function(e) {
 /* ── DELIVERY LOCATION & DISTANCE ── */
 var RESTAURANT         = { lat: 12.3053, lng: 76.6551 };
 var DELIVERY_RADIUS_KM = 5;
-var _locState = { lat: null, lng: null, checked: false, withinRange: false };
+var _locState = { lat: null, lng: null, checked: false, withinRange: false, pinPlaced: false };
 var _map      = null;
 var _marker   = null;
 var _sugTimer = null;
@@ -449,6 +449,7 @@ function _initMap() {
   _marker.on('dragend', function() {
     var ll = _marker.getLatLng();
     onPinMoved();
+    _locState.pinPlaced = true;
     _fillAddressFromPin(ll.lat, ll.lng);
   });
 
@@ -457,6 +458,7 @@ function _initMap() {
     _marker.setLatLng(e.latlng);
     _locState.lat = e.latlng.lat;
     _locState.lng = e.latlng.lng;
+    _locState.pinPlaced = true;
     _setDistBadge(_haversine(e.latlng.lat, e.latlng.lng, RESTAURANT.lat, RESTAURANT.lng));
     _fillAddressFromPin(e.latlng.lat, e.latlng.lng);
   });
@@ -563,6 +565,7 @@ function detectLocation() {
       /* zoom in close to exact location */
       _locState.lat = lat;
       _locState.lng = lng;
+      _locState.pinPlaced = true;
       if (_map && _marker) {
         _marker.setLatLng([lat, lng]);
         _map.setView([lat, lng], 18);   /* zoom 18 = building level */
@@ -735,12 +738,20 @@ function placeOrder() {
   var build = document.getElementById('cbuild') ? document.getElementById('cbuild').value.trim() : '';
   var fullAddr = [area, build, addr].filter(Boolean).join(', ');
 
-  var locLine = '';
-  if (_locState.lat !== null) {
-    var dist = _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng);
-    var mapsUrl = 'https://www.google.com/maps?q=' + _locState.lat.toFixed(6) + ',' + _locState.lng.toFixed(6);
-    locLine = '\n📏 Distance: ' + dist.toFixed(1) + ' km' +
-              '\n🗺️ Location: ' + mapsUrl;
+  // Build ONE clean address line for the restaurant
+  var addressLine = '';
+  if (_locState.pinPlaced && _locState.lat !== null) {
+    // Pin was placed — use typed address as readable text,
+    // and the pin coordinates as the navigation link (same location)
+    var dist    = _haversine(_locState.lat, _locState.lng, RESTAURANT.lat, RESTAURANT.lng);
+    var navUrl  = 'https://www.google.com/maps/dir/?api=1' +
+                  '&destination=' + _locState.lat.toFixed(6) + ',' + _locState.lng.toFixed(6);
+    addressLine = fullAddr +
+                  '\n📏 Distance: ' + dist.toFixed(1) + ' km' +
+                  '\n🗺️ Open in Maps: ' + navUrl;
+  } else {
+    // No pin — just the typed address
+    addressLine = fullAddr;
   }
 
   var msg = '🌿 *New Order — Aranya Garden*\n\n' +
@@ -749,7 +760,7 @@ function placeOrder() {
             '👤 *Customer:*\n' +
             'Name: '    + name     + '\n' +
             'Phone: '   + phone    + '\n' +
-            'Address: ' + fullAddr + locLine + '\n\n' +
+            'Address: ' + addressLine + '\n\n' +
             '💳 Payment: Cash on Delivery\n' +
             '⏱ Kindly confirm. Thank you!';
 
