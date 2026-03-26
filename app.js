@@ -354,92 +354,60 @@ document.addEventListener('keydown', function(e) {
 /* ── DELIVERY LOCATION & DISTANCE ── */
 var RESTAURANT         = { lat: 12.3053, lng: 76.6551 };
 var DELIVERY_RADIUS_KM = 5;
-var _locState = {
-  lat: null, lng: null,
-  checked: false, withinRange: false,
-  pinPlaced: false,
-  pinAddr: ''       /* address derived from pin coords — single source of truth */
-};
+var _locState = { lat: null, lng: null, checked: false, withinRange: false, pinPlaced: false, pinAddr: '' };
 var _map      = null;
 var _marker   = null;
 var _sugTimer = null;
 
-/* ════════════════════════════════════════════
-   DISTANCE HELPERS
-   ════════════════════════════════════════════ */
-
+/* ── Haversine distance (km) ── */
 function _haversine(lat1, lon1, lat2, lon2) {
-  var R = 6371, r = Math.PI / 180;
-  var dL = (lat2-lat1)*r, dN = (lon2-lon1)*r;
-  var a  = Math.sin(dL/2)*Math.sin(dL/2) +
-           Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dN/2)*Math.sin(dN/2);
+  var R = 6371, toRad = Math.PI / 180;
+  var dLat = (lat2 - lat1) * toRad, dLon = (lon2 - lon1) * toRad;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+          Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)*Math.sin(dLon/2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+/* ── Distance badge ── */
 function _setDistBadge(distKm) {
   var badge    = document.getElementById('dist-badge');
   var noDelMsg = document.getElementById('no-delivery-msg');
   var placeBtn = document.querySelector('.place-btn');
   if (!badge) return;
   if (distKm === null) {
-    badge.className   = 'pending';
-    badge.innerHTML   = '📍 Move the pin to your location to check delivery';
+    badge.className = 'pending';
+    badge.innerHTML = '📍 Move the pin to your location to check delivery';
     if (noDelMsg) noDelMsg.classList.remove('show');
     if (placeBtn) placeBtn.disabled = false;
     return;
   }
-  var ok = distKm <= DELIVERY_RADIUS_KM;
-  _locState.withinRange = ok;
+  var within = distKm <= DELIVERY_RADIUS_KM;
+  _locState.withinRange = within;
   _locState.checked     = true;
-  badge.className = 'show ' + (ok ? 'ok' : 'far');
-  badge.innerHTML = ok
+  badge.className = 'show ' + (within ? 'ok' : 'far');
+  badge.innerHTML = within
     ? '✅ ' + distKm.toFixed(1) + ' km away — Delivery available 🛵'
     : '⚠️ ' + distKm.toFixed(1) + ' km away — Outside 5 km delivery range';
-  if (noDelMsg) noDelMsg.classList.toggle('show', !ok);
-  if (placeBtn) placeBtn.disabled = !ok;
+  if (noDelMsg) noDelMsg.classList.toggle('show', !within);
+  if (placeBtn) placeBtn.disabled = !within;
 }
 
-/* ════════════════════════════════════════════
-   REVERSE GEOCODE  — lat/lng → address text
-   All place types: hospital, petrol pump,
-   school, hotel, park, shop, office, etc.
-   ════════════════════════════════════════════ */
-
-function _reverseGeocode(lat, lng, cb) {
-  var url = 'https://nominatim.openstreetmap.org/reverse?format=json' +
-            '&lat=' + lat + '&lon=' + lng +
-            '&zoom=18&addressdetails=1';
-  fetch(url, { headers: { 'Accept-Language': 'en' } })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (!d || !d.address) { cb('', ''); return; }
-    var a = d.address;
-    /* place/building name — every known Nominatim type */
-    var place =
-      a.amenity    || a.tourism  || a.leisure  || a.shop     ||
-      a.fuel       || a.office   || a.building || a.healthcare||
-      a.military   || a.historic || a.man_made || '';
-    /* street parts */
-    var parts = [];
-    if (a.house_number) parts.push(a.house_number);
-    var st = a.road || a.pedestrian || a.path || a.footway || a.service || '';
-    if (st) parts.push(st);
-    var ar = a.quarter || a.neighbourhood || a.suburb || a.residential || '';
-    if (ar) parts.push(ar);
-    var ci = a.city || a.town || a.municipality || a.village || '';
-    if (ci) parts.push(ci);
-    if (a.state)    parts.push(a.state);
-    if (a.postcode) parts.push(a.postcode);
-    var street = parts.filter(Boolean).join(', ') || d.display_name || '';
-    cb(street, place);
-  })
-  .catch(function() { cb('', ''); });
+/* ── Move pin to lat/lng, calculate distance ── */
+function _placePin(lat, lng) {
+  _locState.lat       = lat;
+  _locState.lng       = lng;
+  _locState.pinPlaced = true;
+  if (_map && _marker) {
+    _marker.setLatLng([lat, lng]);
+    _map.setView([lat, lng], 18);
+    _marker.openPopup();
+  }
+  _setDistBadge(_haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng));
+  /* always fill address fields from these exact coordinates */
+  _fillAddressFromPin(lat, lng);
 }
 
-/* ════════════════════════════════════════════
-   MAP INIT
-   ════════════════════════════════════════════ */
-
+/* ── Init Leaflet map ── */
 function _initMap() {
   if (_map) { setTimeout(function(){ _map.invalidateSize(); }, 60); return; }
   var el = document.getElementById('map-picker');
@@ -451,175 +419,112 @@ function _initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
               { maxZoom: 19 }).addTo(_map);
 
-  /* fixed restaurant marker */
+  /* restaurant fixed marker */
   L.marker([RESTAURANT.lat, RESTAURANT.lng], {
-    icon:  L.divIcon({ html: '<div style="font-size:1.5rem">🏪</div>',
-                       className: '', iconAnchor: [12, 24] }),
+    icon: L.divIcon({ html:'<div style="font-size:1.5rem">🏪</div>',
+                      className:'', iconAnchor:[12,24] }),
     title: 'Aranya Garden'
-  }).addTo(_map)
-    .bindPopup('<b>Aranya Garden</b><br>Saraswathipuram, Mysuru');
+  }).addTo(_map).bindPopup('<b>Aranya Garden</b><br>Saraswathipuram, Mysuru');
 
-  /* draggable customer marker */
-  _marker = L.marker([12.2958, 76.6394], {          /* Mysuru city centre */
+  /* draggable customer marker — starts at centre of Mysuru, not restaurant */
+  var startLat = 12.2958, startLng = 76.6394; /* Mysuru city centre */
+  _marker = L.marker([startLat, startLng], {
     icon: L.divIcon({
       html: '<div style="font-size:2rem;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">📍</div>',
-      className: '', iconAnchor: [12, 36]
+      className: '',
+      iconAnchor: [12, 36]
     }),
     draggable: true,
-    title: 'Drag to your location'
+    title: 'Drag me to your location'
   }).addTo(_map);
   _marker.bindPopup('<b>Your location</b><br>Drag to adjust').openPopup();
 
-  /* live distance while dragging */
-  _marker.on('drag', function() {
+  function onPinMoved() {
     var ll = _marker.getLatLng();
-    _locState.lat = ll.lat; _locState.lng = ll.lng;
+    _locState.lat = ll.lat;
+    _locState.lng = ll.lng;
     _setDistBadge(_haversine(ll.lat, ll.lng, RESTAURANT.lat, RESTAURANT.lng));
-  });
+  }
+  /* distance updates live while dragging */
+  _marker.on('drag', onPinMoved);
 
-  /* dragend → distance + fill address from pin */
+  /* on drag END — also reverse geocode and fill address fields */
   _marker.on('dragend', function() {
     var ll = _marker.getLatLng();
-    _locState.lat = ll.lat; _locState.lng = ll.lng;
+    onPinMoved();
     _locState.pinPlaced = true;
-    _setDistBadge(_haversine(ll.lat, ll.lng, RESTAURANT.lat, RESTAURANT.lng));
-    _syncAddrFromPin(ll.lat, ll.lng);
+    _fillAddressFromPin(ll.lat, ll.lng);
   });
 
-  /* tap map → move pin + fill address */
+  /* tap anywhere on map moves pin + fills address */
   _map.on('click', function(e) {
     _marker.setLatLng(e.latlng);
-    _locState.lat = e.latlng.lat; _locState.lng = e.latlng.lng;
+    _locState.lat = e.latlng.lat;
+    _locState.lng = e.latlng.lng;
     _locState.pinPlaced = true;
     _setDistBadge(_haversine(e.latlng.lat, e.latlng.lng, RESTAURANT.lat, RESTAURANT.lng));
-    _syncAddrFromPin(e.latlng.lat, e.latlng.lng);
+    _fillAddressFromPin(e.latlng.lat, e.latlng.lng);
   });
 
+  /* Tile size fix */
   setTimeout(function(){ _map.invalidateSize(); }, 100);
   setTimeout(function(){ _map.invalidateSize(); }, 400);
 }
 
-/* ════════════════════════════════════════════
-   _syncAddrFromPin
-   Reverse-geocodes lat/lng, stores result in
-   _locState.pinAddr AND fills the UI fields.
-   Called after EVERY pin movement.
-   ════════════════════════════════════════════ */
-function _syncAddrFromPin(lat, lng) {
-  _reverseGeocode(lat, lng, function(street, place) {
-    /* canonical address = from pin coords → single source of truth */
-    _locState.pinAddr = street;
-
-    /* fill search box (editable by customer) */
-    var si = document.getElementById('addr-search');
-    if (si) {
-      si.value = street;
-      si.classList.remove('err');
-      var se = document.getElementById('err-addr');
-      if (se) se.classList.remove('on');
-    }
-    /* fill building field only if empty */
-    var bi = document.getElementById('cbuild');
-    if (bi && place && !bi.value) bi.value = place;
-  });
-}
-
-/* ════════════════════════════════════════════
-   _movePinTo(lat, lng, addrText)
-   Moves map marker to position + stores addr.
-   addrText = already-known address (no extra
-   geocode needed when coming from dropdown).
-   ════════════════════════════════════════════ */
-function _movePinTo(lat, lng, addrText) {
-  _locState.lat       = lat;
-  _locState.lng       = lng;
-  _locState.pinPlaced = true;
-  _locState.pinAddr   = addrText;   /* store right now — no async */
-
-  if (_map && _marker) {
-    _marker.setLatLng([lat, lng]);
-    _map.setView([lat, lng], 17);
-    _marker.openPopup();
-  }
-  _setDistBadge(_haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng));
-}
-
-/* ════════════════════════════════════════════
-   ADDRESS SEARCH  (Swiggy-style dropdown)
-   ════════════════════════════════════════════ */
-
+/* ── Address search (Swiggy-style live suggestions) ── */
 function onAddrSearch(val) {
   var box = document.getElementById('addr-suggestions');
   if (!box) return;
   clearTimeout(_sugTimer);
   var q = val.trim();
   if (q.length < 3) {
-    box.innerHTML = ''; box.classList.remove('show'); return;
+    box.innerHTML = '';
+    box.classList.remove('show');
+    return;
   }
   box.innerHTML = '<div class="addr-sug-loading">🔍 Searching…</div>';
   box.classList.add('show');
 
   _sugTimer = setTimeout(function() {
-    /* bias toward Mysuru; try with & without city suffix */
-    var withCity = /mysuru|mysore|karnataka/i.test(q) ? q : q + ', Mysuru';
+    var query = (/mysuru|mysore|karnataka/i.test(q)) ? q : q + ', Mysuru';
     var url = 'https://nominatim.openstreetmap.org/search?format=json' +
-              '&q=' + encodeURIComponent(withCity) +
+              '&q=' + encodeURIComponent(query) +
               '&limit=8&addressdetails=1&countrycodes=in' +
-              '&viewbox=76.45,12.1,76.85,12.55&bounded=0';
+              '&viewbox=76.5,12.1,76.8,12.5&bounded=0';  /* Mysuru area bias */
 
     fetch(url, { headers: { 'Accept-Language': 'en' } })
     .then(function(r) { return r.json(); })
     .then(function(results) {
-      /* if no results with city, try bare query */
       if (!results || !results.length) {
-        return fetch('https://nominatim.openstreetmap.org/search?format=json' +
-                     '&q=' + encodeURIComponent(q) +
-                     '&limit=8&addressdetails=1&countrycodes=in',
-                     { headers: { 'Accept-Language': 'en' } })
-               .then(function(r) { return r.json(); });
-      }
-      return results;
-    })
-    .then(function(results) {
-      box.innerHTML = '';
-      if (!results || !results.length) {
-        box.innerHTML = '<div class="addr-sug-empty">' +
-          '📍 Address not found — drag the map pin to your exact location</div>';
+        box.innerHTML = '<div class="addr-sug-empty">📍 Could not find that address — please drag the map pin to your location below</div>';
         return;
       }
-      box.classList.add('show');
+      box.innerHTML = '';
       results.forEach(function(r) {
         var parts = r.display_name.split(',');
         var main  = esc(parts[0].trim());
         var sub   = esc(parts.slice(1, 4).join(',').trim());
         var item  = document.createElement('div');
-        item.className  = 'addr-sug-item';
-        item.tabIndex   = 0;
-        item.innerHTML  = '<span class="addr-sug-icon">📍</span>' +
-                          '<div><div class="addr-sug-main">' + main + '</div>' +
-                          '<div class="addr-sug-sub">'  + sub  + '</div></div>';
-        /* store all data on element */
+        item.className   = 'addr-sug-item';
+        item.tabIndex    = 0;
+        item.innerHTML   = '<span class="addr-sug-icon">📍</span>' +
+                           '<div><div class="addr-sug-main">' + main + '</div>' +
+                           '<div class="addr-sug-sub">' + sub + '</div></div>';
         item.dataset.lat  = r.lat;
         item.dataset.lon  = r.lon;
         item.dataset.name = r.display_name;
-        function pick() {
-          var lat  = parseFloat(this.dataset.lat);
-          var lng  = parseFloat(this.dataset.lon);
-          var name = this.dataset.name;
-          /* short 3-part name for display */
-          var short = name.split(',').slice(0, 3).join(',').trim();
-          /* fill search box with the same address from the suggestion */
-          var si = document.getElementById('addr-search');
-          if (si) { si.value = short; si.classList.remove('err'); }
-          var se = document.getElementById('err-addr');
-          if (se) se.classList.remove('on');
-          /* close dropdown */
-          box.innerHTML = ''; box.classList.remove('show');
-          /* move pin + store address — no extra geocode needed */
-          _movePinTo(lat, lng, short);
-        }
-        item.addEventListener('click',   pick);
-        item.addEventListener('keydown', function(e) { if (e.key === 'Enter') pick.call(this); });
+        item.addEventListener('click', function() {
+          _pickSuggestion(parseFloat(this.dataset.lat),
+                          parseFloat(this.dataset.lon),
+                          this.dataset.name);
+        });
+        item.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            _pickSuggestion(parseFloat(this.dataset.lat),
+                            parseFloat(this.dataset.lon),
+                            this.dataset.name);
+          }
+        });
         box.appendChild(item);
       });
     })
@@ -629,14 +534,24 @@ function onAddrSearch(val) {
   }, 400);
 }
 
-/* ════════════════════════════════════════════
-   GPS DETECT BUTTON
-   ════════════════════════════════════════════ */
+function _pickSuggestion(lat, lng, displayName) {
+  var inp = document.getElementById('addr-search');
+  if (inp) inp.value = displayName.split(',').slice(0, 3).join(',').trim();
+  var box = document.getElementById('addr-suggestions');
+  if (box) { box.innerHTML = ''; box.classList.remove('show'); }
+  _placePin(lat, lng);
+}
+
+
 function detectLocation() {
   if (detectLocation._busy) return;
   detectLocation._busy = true;
   setTimeout(function(){ detectLocation._busy = false; }, 4000);
-  if (!navigator.geolocation) { toast('GPS not supported by your browser', 'err'); return; }
+
+  if (!navigator.geolocation) {
+    toast('GPS not supported by your browser', 'err');
+    return;
+  }
 
   var btn  = document.getElementById('loc-btn');
   var icon = document.getElementById('loc-btn-icon');
@@ -647,26 +562,31 @@ function detectLocation() {
 
   navigator.geolocation.getCurrentPosition(
     function(pos) {
-      var lat = pos.coords.latitude, lng = pos.coords.longitude;
-      /* move pin immediately */
-      _locState.lat = lat; _locState.lng = lng; _locState.pinPlaced = true;
+      var lat = pos.coords.latitude;
+      var lng = pos.coords.longitude;
+
+      /* zoom in close to exact location */
+      _locState.lat = lat;
+      _locState.lng = lng;
+      _locState.pinPlaced = true;
       if (_map && _marker) {
         _marker.setLatLng([lat, lng]);
-        _map.setView([lat, lng], 18);
+        _map.setView([lat, lng], 18);   /* zoom 18 = building level */
         _marker.openPopup();
       }
+      /* show distance immediately */
       _setDistBadge(_haversine(lat, lng, RESTAURANT.lat, RESTAURANT.lng));
-      /* reverse geocode → fill fields + store pinAddr */
-      _reverseGeocode(lat, lng, function(street, place) {
-        _locState.pinAddr = street;           /* ← stored here */
-        var si = document.getElementById('addr-search');
-        if (si) si.value = street || (lat.toFixed(5) + ', ' + lng.toFixed(5));
-        var bi = document.getElementById('cbuild');
-        if (bi && place && !bi.value) bi.value = place;
+
+      /* reverse geocode to fill search box + building field */
+      _reverseGeocode(lat, lng, function(streetAddr, buildName) {
+        var inp = document.getElementById('addr-search');
+        if (inp) inp.value = streetAddr || (lat.toFixed(5) + ', ' + lng.toFixed(5));
+        var buildInp = document.getElementById('cbuild');
+        if (buildInp && buildName && !buildInp.value) buildInp.value = buildName;
         if (btn)  btn.disabled = false;
         if (icon) icon.style.display = '';
         if (txt)  txt.textContent = '';
-        toast('✅ Location detected — edit if needed');
+        toast('✅ Exact location detected');
       });
     },
     function(err) {
@@ -675,9 +595,9 @@ function detectLocation() {
       if (txt)  txt.textContent = '';
       detectLocation._busy = false;
       var msgs = {
-        1: 'Location permission denied. Allow location in browser settings.',
-        2: 'Could not get GPS. Check that location is ON.',
-        3: 'GPS timed out. Try again.'
+        1: 'Location permission denied. Please allow location access in your browser settings and try again.',
+        2: 'Could not get your location. Make sure GPS is ON.',
+        3: 'Location timed out. Try again.'
       };
       toast(msgs[err.code] || 'Location unavailable.', 'err');
     },
@@ -685,7 +605,73 @@ function detectLocation() {
   );
 }
 
-/* close dropdown on outside click */
+/* ── Reverse geocode (GPS → address text) ── */
+function _reverseGeocode(lat, lng, cb) {
+  fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' +
+        encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng) +
+        '&zoom=18&addressdetails=1',
+        { headers: { 'Accept-Language': 'en' } })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (!d || !d.address) { cb('', ''); return; }
+    var a = d.address;
+
+    /* ── Building/place name — all types ── */
+    var buildName =
+      a.amenity       ||  /* hospital, school, bank, restaurant, cafe… */
+      a.tourism       ||  /* hotel, monument, attraction */
+      a.leisure       ||  /* park, playground */
+      a.shop          ||  /* supermarket, pharmacy, petrol/fuel */
+      a.fuel          ||  /* petrol pump */
+      a.office        ||  /* office building */
+      a.building      ||  /* generic building name */
+      a.healthcare    ||  /* clinic, health centre */
+      a.military      ||  /* army campus */
+      a.historic      ||  /* heritage site */
+      a.man_made      ||  /* tower, water tank */
+      '';
+
+    /* ── Street address ── */
+    var parts = [];
+    if (a.house_number) parts.push(a.house_number);
+    var st = a.road || a.pedestrian || a.path || a.footway || a.service || '';
+    if (st) parts.push(st);
+    var ar = a.quarter || a.neighbourhood || a.suburb || a.residential || '';
+    if (ar) parts.push(ar);
+    var ci = a.city || a.town || a.municipality || a.county || a.village || '';
+    if (ci) parts.push(ci);
+    if (a.state)    parts.push(a.state);
+    if (a.postcode) parts.push(a.postcode);
+
+    var streetAddr = parts.filter(Boolean).join(', ') || d.display_name || '';
+    cb(streetAddr, buildName);
+  })
+  .catch(function() { cb('', ''); });
+}
+
+/* ── Fill address fields after pin is placed/moved ── */
+function _fillAddressFromPin(lat, lng) {
+  _reverseGeocode(lat, lng, function(streetAddr, buildName) {
+    /* Store canonical address derived from pin coords */
+    _locState.pinAddr = streetAddr;
+
+    /* Fill search box with street/area (editable) */
+    var searchInp = document.getElementById('addr-search');
+    if (searchInp) {
+      searchInp.value = streetAddr;
+      searchInp.classList.remove('err');
+      var searchErr = document.getElementById('err-addr');
+      if (searchErr) searchErr.classList.remove('on');
+    }
+    /* Fill building name only if field is empty */
+    var buildInp = document.getElementById('cbuild');
+    if (buildInp && buildName && !buildInp.value) {
+      buildInp.value = buildName;
+    }
+  });
+}
+
+/* ── Close suggestions when clicking/scrolling outside ── */
 document.addEventListener('click', function(e) {
   if (e.target && !e.target.closest('.addr-search-wrap')) {
     var box = document.getElementById('addr-suggestions');
@@ -693,10 +679,45 @@ document.addEventListener('click', function(e) {
   }
 });
 
-/* no-op kept for compatibility */
+/* ── onAddrInput: kept for compatibility (no-op now) ── */
 function onAddrInput() {}
 
+document.addEventListener('DOMContentLoaded',function(){
+  try{loadCart();}catch(e){console.warn('loadCart',e);cart={};}
+  try{renderMenus();}catch(e){console.error('renderMenus',e);}
+  try{updateStatus();setInterval(updateStatus,60000);}catch(e){}
+  try{initStickyNav();}catch(e){}
+  try{initMobNav();}catch(e){}
+  try{updateBadge();}catch(e){}
+  try{initFadeIn();setTimeout(initFadeIn,600);}catch(e){}
 
+  // WhatsApp buttons
+  try{
+    ['nav-wa','hero-wa','mob-wa','apps-wa'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el&&id!=='mob-wa')el.addEventListener('click',function(e){e.preventDefault();waOpen();});
+    });
+  }catch(e){}
+
+  // Swiggy placeholder
+  try{
+    var sw=document.getElementById('swiggy-btn');
+    if(sw)sw.addEventListener('click',function(){toast('Swiggy link coming soon!');} );
+  }catch(e){}
+
+  // Scroll to top button
+  try{
+    var topBtn=document.getElementById('go-top');
+    if(topBtn){
+      window.addEventListener('scroll',function(){
+        topBtn.classList.toggle('show',window.scrollY>320);
+      },{passive:true});
+      topBtn.addEventListener('click',function(){
+        window.scrollTo({top:0,behavior:'smooth'});
+      });
+    }
+  }catch(e){}
+});
 
 
 
