@@ -589,8 +589,8 @@ function placeOrder() {
     return '\u2022 ' + e[0] + ' x ' + e[1].q + ' \u2014 \u20b9' + (e[1].p * e[1].q);
   }).join('\n');
 
-  /* address = detected area + building + flat — all one line */
-  var fullAddr = [_loc.addr, build, flat].filter(Boolean).join(', ');
+  /* address order: flat/house no → building/apartment → detected area */
+  var fullAddr = [flat, build, _loc.addr].filter(Boolean).join(', ');
 
   /* Google Maps pin link — restaurant taps, sees exact customer location */
   var locLine = '';
