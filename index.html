@@ -166,25 +166,23 @@
       <input type="tel" id="cphone" placeholder="10-digit mobile number" maxlength="10">
       <div class="ferr" id="err-phone">Please enter a valid Indian mobile number</div>
     </div>
-    <!-- ADDRESS SEARCH + MAP (Swiggy-style) -->
-    <div class="fg addr-search-fg">
-      <label>Delivery Address *</label>
-      <!-- Search row -->
-      <div class="addr-search-row">
-        <div class="addr-search-wrap">
-          <input type="text" id="addr-search" class="addr-search-input"
-            placeholder="Search area, street or landmark…"
-            autocomplete="off" autocorrect="off" spellcheck="false"
-            maxlength="120" oninput="onAddrSearch(this.value)">
-          <div id="addr-suggestions" class="addr-suggestions"></div>
-        </div>
-        <button type="button" class="loc-detect-btn" id="loc-btn"
-          onclick="detectLocation()" title="Use my exact GPS location" aria-label="Detect my location">
-          <svg id="loc-btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>
-          <span id="loc-btn-txt"></span>
-        </button>
+    <!-- LOCATION DETECT + MAP -->
+    <div class="fg">
+      <label>Your Delivery Location *</label>
+      <button type="button" class="loc-detect-main" id="loc-btn"
+        onclick="detectLocation()" aria-label="Detect my location">
+        <svg id="loc-btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+          <circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/>
+        </svg>
+        <span id="loc-btn-txt">📍 Tap to Detect My Location</span>
+      </button>
+      <!-- Auto-filled address (read-only, filled by GPS or map drag) -->
+      <div id="loc-addr-display" class="loc-addr-display">
+        Tap the button above or drag the map pin
       </div>
-      <div class="ferr" id="err-addr">Please enter your delivery address</div>
+      <div class="ferr" id="err-addr">Please detect your location using the button above</div>
     </div>
     <!-- Map -->
     <div class="map-box">
