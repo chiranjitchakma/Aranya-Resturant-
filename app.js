@@ -625,3 +625,41 @@ function placeOrder() {
   cart = {}; saveCart(); updateBadge(); syncCards(); renderCart();
   toast('Order sent to WhatsApp!');
 }
+document.addEventListener('DOMContentLoaded', function() {
+  try { loadCart(); } catch(e) { console.warn('loadCart', e); cart = {}; }
+  try { renderMenus(); } catch(e) { console.error('renderMenus', e); }
+  try { updateStatus(); setInterval(updateStatus, 60000); } catch(e) {}
+  try { initStickyNav(); } catch(e) {}
+  try { initMobNav(); } catch(e) {}
+  try { updateBadge(); } catch(e) {}
+  try { initFadeIn(); setTimeout(initFadeIn, 600); } catch(e) {}
+
+  /* WhatsApp nav buttons */
+  try {
+    ['nav-wa','hero-wa','mob-wa','apps-wa'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el && id !== 'mob-wa') {
+        el.addEventListener('click', function(e) { e.preventDefault(); waOpen(); });
+      }
+    });
+  } catch(e) {}
+
+  /* Swiggy placeholder */
+  try {
+    var sw = document.getElementById('swiggy-btn');
+    if (sw) sw.addEventListener('click', function() { toast('Coming soon on Swiggy!'); });
+  } catch(e) {}
+
+  /* Scroll to top */
+  try {
+    var topBtn = document.getElementById('go-top');
+    if (topBtn) {
+      window.addEventListener('scroll', function() {
+        topBtn.classList.toggle('show', window.scrollY > 320);
+      }, { passive: true });
+      topBtn.addEventListener('click', function() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
+  } catch(e) {}
+});
