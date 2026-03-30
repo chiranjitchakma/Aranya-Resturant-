@@ -349,7 +349,7 @@ document.addEventListener('keydown', function(e) {
 
 
 /* ── DELIVERY LOCATION & DISTANCE ── */
-var RESTAURANT         = { lat: 12.3053, lng: 76.6551 };
+var RESTAURANT         = { lat: 12.302688, lng: 76.630312 }; /* 29 9th Main, 3rd Cross Rd, Saraswathipuram, Mysuru 570009 */
 var DELIVERY_RADIUS_KM = 5;
 
 /* _loc — single authoritative location state */
@@ -448,7 +448,7 @@ function _initMap(){
   L.marker([RESTAURANT.lat,RESTAURANT.lng],{
     icon:L.divIcon({html:'<div style="font-size:1.5rem">&#127978;</div>',className:'',iconAnchor:[12,24]}),
     title:'Aranya Garden'
-  }).addTo(_map).bindPopup('<b>Aranya Garden</b><br>Saraswathipuram, Mysuru');
+  }).addTo(_map).bindPopup('<b>Aranya Garden</b><br>29, 9th Main, 3rd Cross Rd<br>Saraswathipuram, Mysuru 570009');
   _marker=L.marker([12.2958,76.6394],{
     icon:L.divIcon({html:'<div style="font-size:2rem;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))">&#128205;</div>',className:'',iconAnchor:[12,36]}),
     draggable:true,title:'Drag to your location'
@@ -509,59 +509,6 @@ function detectLocation(){
     },
     {timeout:15000,maximumAge:0,enableHighAccuracy:true}
   );
-}
-
-function onAddrSearch(val){
-  var box=document.getElementById('addr-suggestions');
-  if(!box)return;
-  clearTimeout(_sugTimer);
-  var q=val.trim();
-  if(q.length<3){box.innerHTML='';box.classList.remove('show');return;}
-  box.innerHTML='<div class="addr-sug-loading">Searching...</div>';
-  box.classList.add('show');
-  _sugTimer=setTimeout(function(){
-    var query=(/mysuru|mysore|karnataka/i.test(q))?q:q+', Mysuru Karnataka';
-    fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(query)+'&limit=8&addressdetails=1&countrycodes=in&viewbox=76.45,12.1,76.85,12.55&bounded=0',{headers:{'Accept-Language':'en'}})
-    .then(function(r){return r.json();})
-    .then(function(res){
-      if(!res||!res.length){
-        return fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=8&addressdetails=1&countrycodes=in',{headers:{'Accept-Language':'en'}}).then(function(r){return r.json();});
-      }
-      return res;
-    })
-    .then(function(res){
-      box.innerHTML='';
-      if(!res||!res.length){
-        box.innerHTML='<div class="addr-sug-empty">Not found — drag the map pin instead</div>';
-        return;
-      }
-      box.classList.add('show');
-      res.forEach(function(r){
-        var parts=r.display_name.split(',');
-        var main=esc(parts[0].trim());
-        var sub=esc(parts.slice(1,4).join(',').trim());
-        var item=document.createElement('div');
-        item.className='addr-sug-item';item.tabIndex=0;
-        item.innerHTML='<span class="addr-sug-icon">&#128205;</span><div><div class="addr-sug-main">'+main+'</div><div class="addr-sug-sub">'+sub+'</div></div>';
-        item.dataset.lat=r.lat;item.dataset.lon=r.lon;
-        item.dataset.addr=parts.slice(0,4).join(',').trim();
-        item.addEventListener('click',_onSugPick);
-        item.addEventListener('keydown',function(ev){if(ev.key==='Enter')_onSugPick.call(this);});
-        box.appendChild(item);
-      });
-    })
-    .catch(function(){box.innerHTML='<div class="addr-sug-empty">Search unavailable</div>';});
-  },400);
-}
-
-function _onSugPick(){
-  var lat=parseFloat(this.dataset.lat);
-  var lng=parseFloat(this.dataset.lon);
-  var addr=this.dataset.addr||'';
-  var box=document.getElementById('addr-suggestions');
-  if(box){box.innerHTML='';box.classList.remove('show');}
-  _pinTo(lat,lng);
-  _fillFields(addr,'');
 }
 
 /* onAddrInput and onAddrSearch kept as no-ops for compatibility */
